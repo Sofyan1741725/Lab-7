@@ -25,9 +25,9 @@ public class Instructor extends User
         {
             if (c.getTitle() != null && c.getTitle().equals(title))
             {
-             System.out.println("This Course Is Already Exists..");
-             return;
-         }
+                System.out.println("This Course Is Already Exists..");
+                return;
+            }
         }
         Course course = new Course(title, description,this);
         createdCourses.add(course);

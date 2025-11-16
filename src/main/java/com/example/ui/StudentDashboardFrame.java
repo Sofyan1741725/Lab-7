@@ -1,8 +1,6 @@
 package com.example.ui;
 
-import com.example.models.Course;
-import com.example.models.Lesson;
-import com.example.models.Student;
+import com.example.models.*;
 import com.example.services.CourseService;
 
 import javax.swing.*;
@@ -13,7 +11,6 @@ public class StudentDashboardFrame extends JFrame {
 
     private final Student student;
     private final CourseService courseService;
-
     private JList<String> availableList;
     private JList<String> enrolledList;
     private List<Course> availableCourses;
@@ -23,7 +20,7 @@ public class StudentDashboardFrame extends JFrame {
         this.student = student;
         this.courseService = CourseService.getInstance();
 
-        setTitle("Student Dashboard - " + student.getUsername());
+        setTitle("Student Dashboard - " + student.getUserName());
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setSize(900, 520);
         setLocationRelativeTo(null);
@@ -36,7 +33,7 @@ public class StudentDashboardFrame extends JFrame {
         // Top: controls
         JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton logoutBtn = new JButton("Logout");
-        top.add(new JLabel("Logged in as: " + student.getUsername()));
+        top.add(new JLabel("Logged in as: " + student.getUserName()));
         top.add(Box.createHorizontalStrut(20));
         top.add(logoutBtn);
         root.add(top, BorderLayout.NORTH);
