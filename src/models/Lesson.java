@@ -1,6 +1,6 @@
 package models;
 public class Lesson {
-    private int nextId = 1;
+    private static int nextId = 1;
     private int lessonId;
     private String title;
     private String content;
@@ -16,6 +16,9 @@ public class Lesson {
         this.course = course;
     }
 
+    public Lesson() {}
+
+
     public void setTitle(String title) {this.title = title;}
     public void setLessonId(int lessonId) {this.lessonId = lessonId;}
     public void setContent(String content) {this.content = content;}
@@ -30,7 +33,7 @@ public class Lesson {
     public void displayContent() {
         System.out.println("Lesson: " + title);
         System.out.println(content);
-        if (resourceLink != null)
+        if (resourceLink != null && !resourceLink.isEmpty())
             System.out.println("Resource: " + resourceLink);
     }
 

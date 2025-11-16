@@ -10,14 +10,21 @@ public class Instructor extends User
         this.createdCourses = new ArrayList<>();
     }
 
+    public Instructor() {
+        this.createdCourses = new ArrayList<>();
+    }
+
+
     public void setCreatedCourses(ArrayList<Course> createdCourses) {this.createdCourses = createdCourses;}
-    public ArrayList<Course> getCreatedCourses() {return createdCourses;}
+    public ArrayList<Course> getCreatedCourses() {return new ArrayList<>(createdCourses);
+    }
 
     public void createCourse(String title, String description)
     {
         for(Course c : createdCourses)
         {
-         if(c.getTitle() == title) {
+            if (c.getTitle() != null && c.getTitle().equals(title))
+            {
              System.out.println("This Course Is Already Exists..");
              return;
          }
@@ -35,12 +42,5 @@ public class Instructor extends User
         }
     }
 
-    public void createQuiz(Course course, Quiz quiz)
-    {
-        if (createdCourses.contains(course)) {
-            course.addQuiz(quiz);
-        } else {
-            System.out.println("You Can't Add a Quiz To a Course You Didn't Create..");
-        }
-    }
+
 }
