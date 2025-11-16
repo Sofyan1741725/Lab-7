@@ -19,7 +19,7 @@ public class InstructorDashboardFrame extends JFrame {
         this.instructor = instructor;
         this.courseService = CourseService.getInstance();
 
-        setTitle("Instructor Dashboard - " + instructor.getUsername());
+        setTitle("Instructor Dashboard - " + instructor.getUserName());
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setSize(900, 520);
         setLocationRelativeTo(null);
@@ -29,7 +29,7 @@ public class InstructorDashboardFrame extends JFrame {
         add(root);
 
         JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        top.add(new JLabel("Logged in as: " + instructor.getUsername()));
+        top.add(new JLabel("Logged in as: " + instructor.getUserName()));
         JButton logoutBtn = new JButton("Logout");
         top.add(logoutBtn);
         root.add(top, BorderLayout.NORTH);

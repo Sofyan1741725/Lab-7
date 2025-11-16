@@ -5,11 +5,10 @@ public class Student extends User
 {
     private ArrayList<Course> enrolledCourses ;
 
-    public Student(int userId, String userName, String email, String password)
- {
-     super(userId, userName, email, password);
-     this.enrolledCourses = new ArrayList<>();
- }
+    public Student(int userId, String userName, String email, String password) {
+        super(userId, userName, email, password);
+        this.enrolledCourses = new ArrayList<>();
+    }
 
     public Student() {
         this.enrolledCourses = new ArrayList<>();
