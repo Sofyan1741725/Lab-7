@@ -1,0 +1,30 @@
+[
+  {
+    "courseId": 1,
+    "title": "Control Systems",
+    "description": "000000000000000000",
+    "instructor": {
+      "createdCourses": [],
+      "userId": 0,
+      "userName": "Magdy",
+      "email": "magdy@gmail.com",
+      "password": "123456",
+      "isLoggedIn": false
+    },
+    "lessons": []
+  },
+  {
+    "courseId": 3,
+    "title": "math",
+    "description": "111111111111",
+    "instructor": {
+      "createdCourses": [],
+      "userId": 0,
+      "userName": "Magdy",
+      "email": "magdy@gmail.com",
+      "password": "123456",
+      "isLoggedIn": false
+    },
+    "lessons": []
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "createdCourses": [],
+    "userId": 0,
+    "userName": "Magdy",
+    "email": "magdy@gmail.com",
+    "password": "123456",
+    "isLoggedIn": false
+  },
+  {
+    "userId": 0,
+    "userName": "Magdy",
+    "email": "magdy@gmail.com",
+    "password": "123456",
+    "isLoggedIn": false
+  }
+]
