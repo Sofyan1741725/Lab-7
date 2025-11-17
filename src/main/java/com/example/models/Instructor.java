@@ -41,6 +41,19 @@ public class Instructor extends User
             System.out.println("You Can't Add a Lesson To a Course You Didn't Create..");
         }
     }
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Instructor that = (Instructor) o;
+        return this.getUserId() == that.getUserId();
+    }
+
+    @Override
+    public int hashCode() {
+        return Integer.hashCode(getUserId());
+    }
+
 
 
 }

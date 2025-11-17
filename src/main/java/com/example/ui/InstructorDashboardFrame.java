@@ -28,6 +28,7 @@ public class InstructorDashboardFrame extends JFrame {
         root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
         add(root);
 
+        // Top panel
         JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         top.add(new JLabel("Logged in as: " + instructor.getUserName()));
         JButton logoutBtn = new JButton("Logout");
@@ -38,7 +39,7 @@ public class InstructorDashboardFrame extends JFrame {
             new LoginFrame().setVisible(true);
         });
 
-        // Center: course list and control panel
+        // Center panel: course list + controls
         JPanel center = new JPanel(new BorderLayout(8,8));
         myCourses = courseService.getCoursesByInstructor(instructor);
         courseList = new JList<>(myCourses.stream().map(Course::getTitle).toArray(String[]::new));
@@ -64,26 +65,29 @@ public class InstructorDashboardFrame extends JFrame {
         center.add(controls, BorderLayout.EAST);
         root.add(center, BorderLayout.CENTER);
 
-        // actions
-        createBtn.addActionListener(e -> {
-            new CreateCourseFrame(instructor).setVisible(true);
-        });
-
+        // Actions
+        createBtn.addActionListener(e -> new CreateCourseFrame(instructor).setVisible(true));
         editBtn.addActionListener(e -> doEditCourse());
         deleteBtn.addActionListener(e -> doDeleteCourse());
         manageLessonsBtn.addActionListener(e -> doManageLessons());
         viewStudentsBtn.addActionListener(e -> doViewStudents());
 
-        // refresh when window regains focus
+        // Refresh list when window gains focus
         addWindowFocusListener(new java.awt.event.WindowAdapter() {
             public void windowGainedFocus(java.awt.event.WindowEvent e) {
                 refreshList();
             }
         });
+
+        // Initial refresh to ensure courses show up
+        refreshList();
     }
 
     private void refreshList() {
         myCourses = courseService.getCoursesByInstructor(instructor);
+        // Debug: تأكد من الكورسات
+        System.out.println("Courses for instructor " + instructor.getUserName() + ":");
+        myCourses.forEach(c -> System.out.println(c.getTitle() + " - ID: " + c.getCourseId()));
         courseList.setListData(myCourses.stream().map(Course::getTitle).toArray(String[]::new));
     }
 

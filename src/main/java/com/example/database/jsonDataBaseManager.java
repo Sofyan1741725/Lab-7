@@ -11,6 +11,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
+
 public class jsonDataBaseManager<T> {
 
     private final Path path;
@@ -32,16 +33,10 @@ public class jsonDataBaseManager<T> {
         ensureFileExists();
     }
 
-    /* =================== File helpers =================== */
-
     private synchronized void ensureFileExists() {
         try {
             if (Files.notExists(path)) {
-                // Ensure parent dirs exist
-                if (path.getParent() != null) {
-                    Files.createDirectories(path.getParent());
-                }
-                // create empty JSON array
+                if (path.getParent() != null) Files.createDirectories(path.getParent());
                 Files.write(path, "[]".getBytes(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             }
         } catch (IOException e) {
@@ -55,19 +50,17 @@ public class jsonDataBaseManager<T> {
             JsonElement elem = JsonParser.parseReader(r);
             if (elem == null || elem.isJsonNull()) return new JsonArray();
             if (elem.isJsonArray()) return elem.getAsJsonArray();
-            // If file contains an object (not array), wrap it
             JsonArray arr = new JsonArray();
             arr.add(elem);
             return arr;
         } catch (IOException e) {
             throw new RuntimeException("Failed to read JSON file: " + path.toString(), e);
         } catch (JsonParseException e) {
-            // If file is corrupted, back up and reinitialize empty array to avoid crashes
             try {
                 Path backup = Paths.get(path.toString() + ".corrupt." + System.currentTimeMillis());
                 Files.copy(path, backup, StandardCopyOption.REPLACE_EXISTING);
                 Files.write(path, "[]".getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
-            } catch (IOException ex) { /* ignore */ }
+            } catch (IOException ignored) { }
             return new JsonArray();
         }
     }
@@ -80,8 +73,6 @@ public class jsonDataBaseManager<T> {
             throw new RuntimeException("Failed to write JSON file: " + path.toString(), e);
         }
     }
-
-    /* =================== (De)serialization helpers =================== */
 
     private synchronized List<T> loadAllObjects() {
         JsonArray arr = readJsonArrayFromFile();
@@ -99,14 +90,11 @@ public class jsonDataBaseManager<T> {
                 List<T> list = gson.fromJson(r, listType);
                 if (list != null) return list;
             } catch (IOException ignored) { }
-            // fallback: try manual parsing
             for (JsonElement e : arr) {
                 try {
                     T obj = gson.fromJson(e, type);
                     if (obj != null) result.add(obj);
-                } catch (JsonSyntaxException ex) {
-                    // skip bad element
-                }
+                } catch (JsonSyntaxException ex) { }
             }
         }
         return result;
@@ -121,12 +109,8 @@ public class jsonDataBaseManager<T> {
         writeJsonArrayToFile(arr);
     }
 
-    /* =================== ID helpers (reflection) =================== */
-
-    // Try to extract ID string from object T using reflection: try getter methods then fields
     private String getIdFromObject(T obj) {
         if (obj == null) return null;
-        // common getter names
         String[] getters = new String[]{
                 "get" + capitalize(idFieldName),
                 "getId",
@@ -138,11 +122,8 @@ public class jsonDataBaseManager<T> {
                 Object val = m.invoke(obj);
                 if (val != null) return val.toString();
             } catch (NoSuchMethodException ignored) {
-            } catch (Exception e) {
-                // ignore other reflection errors
-            }
+            } catch (Exception ignored) { }
         }
-        // try direct field access
         Class<?> c = obj.getClass();
         while (c != null) {
             try {
@@ -153,9 +134,7 @@ public class jsonDataBaseManager<T> {
                 break;
             } catch (NoSuchFieldException ignored) {
                 c = c.getSuperclass();
-            } catch (Exception ignored) {
-                break;
-            }
+            } catch (Exception ignored) { break; }
         }
         return null;
     }
@@ -164,7 +143,6 @@ public class jsonDataBaseManager<T> {
         if (json == null) return null;
         JsonElement e = json.get(idFieldName);
         if (e != null && !e.isJsonNull()) return e.getAsString();
-        // try fallback "id"
         JsonElement e2 = json.get("id");
         if (e2 != null && !e2.isJsonNull()) return e2.getAsString();
         return null;
@@ -180,25 +158,16 @@ public class jsonDataBaseManager<T> {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    /* =================== Public CRUD operations =================== */
-
     public synchronized void add(T obj) {
         if (obj == null) throw new IllegalArgumentException("Object cannot be null");
         List<T> list = loadAllObjects();
-
-        // If object has an id field, ensure uniqueness
         String id = getIdFromObject(obj);
-        if (id != null && idExistsInList(list, id)) {
-            throw new IllegalArgumentException("An object with the same id already exists: " + id);
-        }
-
+        if (id != null && idExistsInList(list, id)) throw new IllegalArgumentException("An object with the same id already exists: " + id);
         list.add(obj);
         saveAllObjects(list);
     }
 
-    public synchronized List<T> getAll() {
-        return Collections.unmodifiableList(loadAllObjects());
-    }
+    public synchronized List<T> getAll() { return Collections.unmodifiableList(loadAllObjects()); }
 
     public synchronized Optional<T> getById(String id) {
         if (id == null) return Optional.empty();
@@ -207,9 +176,7 @@ public class jsonDataBaseManager<T> {
             for (JsonElement e : arr) {
                 if (e.isJsonObject()) {
                     String eid = getIdFromJson(e.getAsJsonObject());
-                    if (id.equals(eid)) {
-                        return Optional.ofNullable(customDeserializer.apply(e.getAsJsonObject()));
-                    }
+                    if (id.equals(eid)) return Optional.ofNullable(customDeserializer.apply(e.getAsJsonObject()));
                 }
             }
             return Optional.empty();
@@ -245,28 +212,18 @@ public class jsonDataBaseManager<T> {
         while (it.hasNext()) {
             T t = it.next();
             String tid = getIdFromObject(t);
-            if (id.equals(tid)) {
-                it.remove();
-                removed = true;
-                break;
-            }
+            if (id.equals(tid)) { it.remove(); removed = true; break; }
         }
-        if (removed) {
-            saveAllObjects(list);
-        }
+        if (removed) saveAllObjects(list);
         return removed;
     }
 
     public synchronized boolean exists(Predicate<T> predicate) {
         if (predicate == null) return false;
         List<T> list = loadAllObjects();
-        for (T t : list) {
-            if (predicate.test(t)) return true;
-        }
+        for (T t : list) if (predicate.test(t)) return true;
         return false;
     }
-
-    /* =================== Utility =================== */
 
     public String generateUniqueId(String prefix) {
         if (prefix == null) prefix = "";
@@ -274,14 +231,9 @@ public class jsonDataBaseManager<T> {
     }
 
     private boolean idExistsInList(List<T> list, String id) {
-        for (T t : list) {
-            String tid = getIdFromObject(t);
-            if (id.equals(tid)) return true;
-        }
+        for (T t : list) if (id.equals(getIdFromObject(t))) return true;
         return false;
     }
 
-    public Path getPath() {
-        return path;
-    }
+    public Path getPath() { return path; }
 }

@@ -1,38 +1,42 @@
 package com.example.models;
-import java.util.ArrayList;
 
-public class Student extends User
-{
-    private ArrayList<Course> enrolledCourses ;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class Student extends User {
+
+    private List<Course> enrolledCourses;
+    private Map<Integer, List<Lesson>> completedLessons; // key: courseId
 
     public Student(int userId, String userName, String email, String password) {
         super(userId, userName, email, password);
         this.enrolledCourses = new ArrayList<>();
+        this.completedLessons = new HashMap<>();
     }
 
-    public Student() {
-        this.enrolledCourses = new ArrayList<>();
+    public List<Course> getEnrolledCourses() {
+        if (enrolledCourses == null) enrolledCourses = new ArrayList<>();
+        return enrolledCourses;
     }
 
-    public void enrollInCourse(Course course)
-    {
-        if(!enrolledCourses.contains(course))
-        {
-            enrolledCourses.add(course);
-            System.out.println("Enrolled Successfully..");
+    public void addCompletedLesson(Lesson lesson) {
+        if (lesson == null) return;
+        int courseId = lesson.getCourse().getCourseId();
+        completedLessons.putIfAbsent(courseId, new ArrayList<>());
+        if (!completedLessons.get(courseId).contains(lesson)) {
+            completedLessons.get(courseId).add(lesson);
         }
-        else System.out.println("You Already Enrolled In This Course..");
-    };
-    public void completeLesson(Lesson lesson) {
-        System.out.println(getUserName() + " completed lesson: " + lesson.getTitle());
     }
 
+    public List<Lesson> getCompletedLessons(Course course) {
+        if (course == null) return new ArrayList<>();
+        return completedLessons.getOrDefault(course.getCourseId(), new ArrayList<>());
+    }
 
-
-
-
-
-
-    public ArrayList<Course> getEnrolledCourses() {return new ArrayList<>(enrolledCourses);}
-
+    // **الـ method الجديدة اللي ترجّع عدد الدروس المكتملة مباشرة**
+    public int getCompletedLessonCount(Course course) {
+        return getCompletedLessons(course).size();
+    }
 }

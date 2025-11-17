@@ -3,139 +3,89 @@ package com.example.services;
 import com.example.models.Student;
 import com.example.models.Instructor;
 import com.example.models.User;
-import com.example.database.jsonDataBaseManager;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Optional;
-import java.util.regex.Pattern;
+import com.google.gson.*;
+import java.io.*;
+import java.lang.reflect.Type;
+import java.util.*;
 
 public class AuthService {
 
-    private final jsonDataBaseManager<User> userDB;
+    private static AuthService instance;
+    private final List<User> users;
+    private final Gson gson;
 
-    // Email regex pattern for validation
-    private static final Pattern EMAIL_PATTERN =
-            Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$");
+    private final File usersFile = new File("users.json");
 
-    public AuthService(String userJsonPath) {
-        this.userDB = new jsonDataBaseManager<>(userJsonPath, User.class, "userId");
+    private AuthService() {
+        users = new ArrayList<>();
+        gson = new GsonBuilder()
+                .setPrettyPrinting()
+                .registerTypeAdapter(User.class, new UserDeserializer())
+                .create();
+        loadUsers();
     }
 
-    // ================= SHA-256 password hashing =================
-    private String hashPassword(String password) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest(password.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashed) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 algorithm not available", e);
+    public static AuthService getInstance() {
+        if (instance == null) {
+            instance = new AuthService();
         }
+        return instance;
     }
 
-    // ================= Email validation =================
-    private boolean isValidEmail(String email) {
-        return email != null && EMAIL_PATTERN.matcher(email).matches();
-    }
-
-    // ================= Signup =================
-    public boolean signupStudent(String userName, String email, String password) {
-        if (userName == null || userName.isEmpty() ||
-                email == null || email.isEmpty() ||
-                password == null || password.isEmpty()) {
-            System.out.println("All fields are required.");
-            return false;
+    public boolean signup(String username, String email, String password, String role) {
+        if (users.stream().anyMatch(u -> u.getEmail().equalsIgnoreCase(email))) {
+            return false; // email exists
         }
 
-        if (!isValidEmail(email)) {
-            System.out.println("Invalid email format.");
-            return false;
+        User u;
+        if (role.equalsIgnoreCase("Student")) {
+            u = new Student(0, username, email, password);
+        } else {
+            u = new Instructor(0, username, email, password);
         }
 
-        // Check if email already exists
-        if (userDB.exists(u -> email.equals(u.getEmail()))) {
-            System.out.println("Email already registered.");
-            return false;
-        }
-
-        String hashedPassword = hashPassword(password);
-        String uniqueId = userDB.generateUniqueId("stu");
-
-        Student student = new Student();
-        student.setUserId(uniqueId.hashCode()); // or use any unique numeric ID scheme
-        student.setUserName(userName);
-        student.setEmail(email);
-        student.setPassword(hashedPassword);
-
-        userDB.add(student);
-        System.out.println("Student registered successfully!");
+        users.add(u);
+        saveUsers();
         return true;
     }
 
-    public boolean signupInstructor(String userName, String email, String password) {
-        if (userName == null || userName.isEmpty() ||
-                email == null || email.isEmpty() ||
-                password == null || password.isEmpty()) {
-            System.out.println("All fields are required.");
-            return false;
-        }
-
-        if (!isValidEmail(email)) {
-            System.out.println("Invalid email format.");
-            return false;
-        }
-
-        // Check if email already exists
-        if (userDB.exists(u -> email.equals(u.getEmail()))) {
-            System.out.println("Email already registered.");
-            return false;
-        }
-
-        String hashedPassword = hashPassword(password);
-        String uniqueId = userDB.generateUniqueId("ins");
-
-        Instructor instructor = new Instructor();
-        instructor.setUserId(uniqueId.hashCode());
-        instructor.setUserName(userName);
-        instructor.setEmail(email);
-        instructor.setPassword(hashedPassword);
-
-        userDB.add(instructor);
-        System.out.println("Instructor registered successfully!");
-        return true;
-    }
-
-    // ================= Login =================
-    public Optional<User> login(String email, String password) {
-        if (email == null || email.isEmpty() || password == null || password.isEmpty()) {
-            System.out.println("Email and password are required.");
-            return Optional.empty();
-        }
-
-        String hashedPassword = hashPassword(password);
-
-        return userDB.getAll().stream()
-                .filter(u -> email.equals(u.getEmail()) && hashedPassword.equals(u.getPassword()))
+    public User login(String email, String password) {
+        return users.stream()
+                .filter(u -> u.getEmail().equalsIgnoreCase(email) && u.getPassword().equals(password))
                 .findFirst()
-                .map(u -> {
-                    System.out.println(u.getUserName() + " logged in successfully!");
-                    return u;
-                });
+                .orElse(null);
     }
 
-    // ================= Logout =================
-    public void logout(User user) {
-        if (user == null) {
-            System.out.println("No user is currently logged in.");
-            return;
+    private void loadUsers() {
+        if (!usersFile.exists()) return;
+
+        try (Reader reader = new FileReader(usersFile)) {
+            User[] arr = gson.fromJson(reader, User[].class);
+            if (arr != null) users.addAll(Arrays.asList(arr));
+        } catch (IOException e) {
+            System.out.println("Failed to load users: " + e.getMessage());
         }
-        System.out.println(user.getUserName() + " logged out successfully!");
     }
-public class AuthService {
-    
+
+    private void saveUsers() {
+        try (Writer writer = new FileWriter(usersFile)) {
+            gson.toJson(users, writer);
+        } catch (IOException e) {
+            System.out.println("Failed to save users: " + e.getMessage());
+        }
+    }
+
+    // Custom deserializer to handle User -> Student/Instructor
+    private static class UserDeserializer implements JsonDeserializer<User> {
+        @Override
+        public User deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject obj = json.getAsJsonObject();
+            String role = obj.has("role") ? obj.get("role").getAsString() : "Student"; // default Student
+            if (role.equalsIgnoreCase("Instructor")) {
+                return context.deserialize(json, Instructor.class);
+            } else {
+                return context.deserialize(json, Student.class);
+            }
+        }
+    }
 }

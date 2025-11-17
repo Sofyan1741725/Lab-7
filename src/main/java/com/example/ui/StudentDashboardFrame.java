@@ -135,7 +135,7 @@ public class StudentDashboardFrame extends JFrame {
         StringBuilder sb = new StringBuilder();
         sb.append("Title: ").append(c.getTitle()).append("\n\n");
         sb.append("Description: ").append(c.getDescription()).append("\n\n");
-        sb.append("Instructor: ").append(c.getInstructorId()).append("\n");
+        sb.append("Instructor: ").append(c.getInstructor().getUserName()).append("\n");
         JOptionPane.showMessageDialog(this, sb.toString(), "Course Details", JOptionPane.INFORMATION_MESSAGE);
     }
 
@@ -146,7 +146,7 @@ public class StudentDashboardFrame extends JFrame {
             return;
         }
         Course c = enrolledCourses.get(idx);
-        String progress = courseService.getProgressSummary(student, c); 
+        String progress = courseService.getProgressSummary(student, c);
         JOptionPane.showMessageDialog(this, progress, "Progress", JOptionPane.INFORMATION_MESSAGE);
     }
 }
