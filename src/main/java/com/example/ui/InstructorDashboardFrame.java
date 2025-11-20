@@ -2,146 +2,189 @@ package com.example.ui;
 
 import com.example.models.Course;
 import com.example.models.Instructor;
+import com.example.models.Student;
 import com.example.services.CourseService;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.List;
 
 public class InstructorDashboardFrame extends JFrame {
-
-    private final Instructor instructor;
-    private final CourseService courseService;
-    private JList<String> courseList;
-    private List<Course> myCourses;
+    private Instructor instructor;
+    private CourseService courseService;
+    private JTable courseTable;
+    private DefaultTableModel tableModel;
+    private JTextField searchField;
 
     public InstructorDashboardFrame(Instructor instructor) {
         this.instructor = instructor;
         this.courseService = CourseService.getInstance();
 
-        setTitle("Instructor Dashboard - " + instructor.getUserName());
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(900, 520);
+        setTitle("Instructor Dashboard");
+        setSize(1000, 600);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        JPanel root = new JPanel(new BorderLayout(10, 10));
-        root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-        add(root);
+        JPanel mainPanel = new JPanel(new BorderLayout(10,10));
 
-        // Top panel
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        top.add(new JLabel("Logged in as: " + instructor.getUserName()));
+        // ================= Top Bar (Welcome + Logout) =================
+        JPanel topBar = new JPanel(new BorderLayout());
+        topBar.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+
+        JLabel welcomeLabel = new JLabel("Welcome, " + instructor.getUsername());
+        welcomeLabel.setFont(new Font("Arial", Font.BOLD, 16));
+
         JButton logoutBtn = new JButton("Logout");
-        top.add(logoutBtn);
-        root.add(top, BorderLayout.NORTH);
         logoutBtn.addActionListener(e -> {
             dispose();
-            new LoginFrame().setVisible(true);
+            new LoginFrame();
         });
 
-        // Center panel: course list + controls
-        JPanel center = new JPanel(new BorderLayout(8,8));
-        myCourses = courseService.getCoursesByInstructor(instructor);
-        courseList = new JList<>(myCourses.stream().map(Course::getTitle).toArray(String[]::new));
-        center.add(new JScrollPane(courseList), BorderLayout.CENTER);
+        topBar.add(welcomeLabel, BorderLayout.WEST);
+        topBar.add(logoutBtn, BorderLayout.EAST);
+        add(topBar, BorderLayout.NORTH);
 
-        JPanel controls = new JPanel();
-        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        // ================= Search =================
+        searchField = new JTextField();
+        searchField.setToolTipText("Search courses...");
+        mainPanel.add(searchField, BorderLayout.NORTH);
+
+        // ================= Table =================
+        String[] columns = {"ID","Title","Students","Manage Lessons","View Students"};
+        tableModel = new DefaultTableModel(columns,0){
+            public boolean isCellEditable(int row,int column){ return column>=3; }
+        };
+        courseTable = new JTable(tableModel);
+
+        // Manage Lessons Button
+        courseTable.getColumn("Manage Lessons").setCellRenderer(new ButtonRenderer());
+        courseTable.getColumn("Manage Lessons").setCellEditor(new ButtonEditor("Manage Lessons", courseId->{
+            Course c = courseService.getCourseById(courseId);
+            if(c != null){
+                if(c.getLessons()==null) c.setLessons(new java.util.ArrayList<>());
+                new LessonManagementFrame(c);
+            }
+        }));
+
+        // View Enrolled Students Button
+        courseTable.getColumn("View Students").setCellRenderer(new ButtonRenderer());
+        courseTable.getColumn("View Students").setCellEditor(new ButtonEditor("View Students", courseId->{
+            Course c = courseService.getCourseById(courseId);
+            if(c != null){
+                List<Student> students = c.getEnrolledStudents();
+                StringBuilder sb = new StringBuilder();
+                for(Student s : students){
+                    sb.append(s.getUsername()).append(" - ").append(s.getEmail()).append("\n");
+                }
+                JOptionPane.showMessageDialog(this,
+                        sb.length()>0?sb.toString():"No students enrolled yet.",
+                        "Enrolled Students for " + c.getTitle(),
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+        }));
+
+        mainPanel.add(new JScrollPane(courseTable), BorderLayout.CENTER);
+
+        // ================= Create Course =================
+        JPanel createPanel = new JPanel(new GridLayout(3,2,10,10));
+        createPanel.add(new JLabel("Course Title:"));
+        JTextField titleField = new JTextField();
+        createPanel.add(titleField);
+
+        createPanel.add(new JLabel("Description:"));
+        JTextArea descArea = new JTextArea(5,20);
+        createPanel.add(new JScrollPane(descArea));
+
         JButton createBtn = new JButton("Create Course");
-        JButton editBtn = new JButton("Edit Course");
-        JButton deleteBtn = new JButton("Delete Course");
-        JButton manageLessonsBtn = new JButton("Manage Lessons");
-        JButton viewStudentsBtn = new JButton("View Enrolled Students");
-        controls.add(createBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(editBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(deleteBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(manageLessonsBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(viewStudentsBtn);
+        createPanel.add(createBtn);
 
-        center.add(controls, BorderLayout.EAST);
-        root.add(center, BorderLayout.CENTER);
-
-        // Actions
-        createBtn.addActionListener(e -> new CreateCourseFrame(instructor).setVisible(true));
-        editBtn.addActionListener(e -> doEditCourse());
-        deleteBtn.addActionListener(e -> doDeleteCourse());
-        manageLessonsBtn.addActionListener(e -> doManageLessons());
-        viewStudentsBtn.addActionListener(e -> doViewStudents());
-
-        // Refresh list when window gains focus
-        addWindowFocusListener(new java.awt.event.WindowAdapter() {
-            public void windowGainedFocus(java.awt.event.WindowEvent e) {
-                refreshList();
+        createBtn.addActionListener(e->{
+            String title = titleField.getText();
+            String desc = descArea.getText();
+            if(!title.isEmpty() && !desc.isEmpty()){
+                Course c = new Course(title, desc, instructor);
+                courseService.addCourse(c);
+                instructor.getCreatedCourses().add(c);
+                refreshCourses();
+                JOptionPane.showMessageDialog(this,"Course created successfully!");
+                titleField.setText(""); descArea.setText("");
+            } else {
+                JOptionPane.showMessageDialog(this,"Title and Description required!","Error",JOptionPane.ERROR_MESSAGE);
             }
         });
 
-        // Initial refresh to ensure courses show up
-        refreshList();
+        // ================= Layout =================
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.add("My Courses", mainPanel);
+        tabbedPane.add("Create Course", createPanel);
+        add(tabbedPane, BorderLayout.CENTER);
+
+        refreshCourses();
+
+        // ================= Search Listener =================
+        searchField.addKeyListener(new java.awt.event.KeyAdapter(){
+            public void keyReleased(java.awt.event.KeyEvent e){
+                refreshCourses(searchField.getText());
+            }
+        });
+
+        setVisible(true);
     }
 
-    private void refreshList() {
-        myCourses = courseService.getCoursesByInstructor(instructor);
-        // Debug: تأكد من الكورسات
-        System.out.println("Courses for instructor " + instructor.getUserName() + ":");
-        myCourses.forEach(c -> System.out.println(c.getTitle() + " - ID: " + c.getCourseId()));
-        courseList.setListData(myCourses.stream().map(Course::getTitle).toArray(String[]::new));
+    private void refreshCourses(){ refreshCourses(""); }
+
+    private void refreshCourses(String filter){
+        tableModel.setRowCount(0);
+        List<Course> courses = instructor.getCreatedCourses();
+        for(Course c : courses){
+            if(filter.isEmpty() || c.getTitle().toLowerCase().contains(filter.toLowerCase())){
+                tableModel.addRow(new Object[]{
+                        c.getCourseId(),
+                        c.getTitle(),
+                        c.getEnrolledStudents()!=null?c.getEnrolledStudents().size():0,
+                        "Manage Lessons",
+                        "View Students"
+                });
+            }
+        }
     }
 
-    private void doEditCourse() {
-        int idx = courseList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select a course to edit.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    // ================= Table Button Renderer =================
+    class ButtonRenderer extends JButton implements javax.swing.table.TableCellRenderer{
+        public ButtonRenderer(){ setOpaque(true);}
+        public Component getTableCellRendererComponent(JTable table,Object value,boolean isSelected,boolean hasFocus,int row,int column){
+            setText((value==null)?"":value.toString());
+            return this;
         }
-        Course c = myCourses.get(idx);
-        new EditCourseFrame(c).setVisible(true);
     }
 
-    private void doDeleteCourse() {
-        int idx = courseList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select a course to delete.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        Course c = myCourses.get(idx);
-        int confirm = JOptionPane.showConfirmDialog(this, "Delete course '" + c.getTitle() + "'?", "Confirm", JOptionPane.YES_NO_OPTION);
-        if (confirm != JOptionPane.YES_OPTION) return;
-        boolean ok = courseService.deleteCourse(c);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Delete failed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Course deleted.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        refreshList();
-    }
+    interface ButtonAction{ void action(int id);}
 
-    private void doManageLessons() {
-        int idx = courseList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select a course to manage lessons.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        Course c = myCourses.get(idx);
-        new LessonManagementFrame(c).setVisible(true);
-    }
+    class ButtonEditor extends DefaultCellEditor{
+        protected JButton button; private boolean clicked; private int id; private ButtonAction action;
 
-    private void doViewStudents() {
-        int idx = courseList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select a course first.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+        public ButtonEditor(String btnText, ButtonAction action){
+            super(new JCheckBox());
+            this.button = new JButton(btnText);
+            this.button.setOpaque(true);
+            this.action = action;
+            button.addActionListener(e->fireEditingStopped());
         }
-        Course c = myCourses.get(idx);
-        java.util.List<String> students = courseService.getEnrolledStudentNames(c);
-        if (students == null || students.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No enrolled students yet.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+
+        public Component getTableCellEditorComponent(JTable table,Object value,boolean isSelected,int row,int column){
+            id = (int)table.getValueAt(row,0);
+            clicked=true;
+            return button;
         }
-        JList<String> lst = new JList<>(students.toArray(new String[0]));
-        JOptionPane.showMessageDialog(this, new JScrollPane(lst), "Enrolled Students", JOptionPane.PLAIN_MESSAGE);
+
+        public Object getCellEditorValue(){
+            if(clicked) action.action(id);
+            clicked=false;
+            return "";
+        }
+
+        public boolean stopCellEditing(){ clicked=false; return super.stopCellEditing(); }
+        protected void fireEditingStopped(){ super.fireEditingStopped(); }
     }
 }

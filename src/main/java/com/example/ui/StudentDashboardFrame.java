@@ -1,152 +1,182 @@
 package com.example.ui;
 
-import com.example.models.*;
+import com.example.models.Course;
+import com.example.models.Student;
 import com.example.services.CourseService;
 
 import javax.swing.*;
+import javax.swing.table.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.util.List;
 
 public class StudentDashboardFrame extends JFrame {
+    private Student student;
+    private CourseService courseService;
 
-    private final Student student;
-    private final CourseService courseService;
-    private JList<String> availableList;
-    private JList<String> enrolledList;
-    private List<Course> availableCourses;
-    private List<Course> enrolledCourses;
+    private JTable availableTable;
+    private JTable enrolledTable;
+    private DefaultTableModel availableModel;
+    private DefaultTableModel enrolledModel;
+    private JTextField searchField;
 
     public StudentDashboardFrame(Student student) {
         this.student = student;
         this.courseService = CourseService.getInstance();
 
-        setTitle("Student Dashboard - " + student.getUserName());
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(900, 520);
+        setTitle("Student Dashboard");
+        setSize(1000, 600);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        // Root layout
-        JPanel root = new JPanel(new BorderLayout(10,10));
-        root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-        add(root);
+        JTabbedPane tabbedPane = new JTabbedPane();
+        JPanel topPanel = new JPanel(new BorderLayout());
+        JLabel welcomeLabel = new JLabel("Welcome, " + student.getUsername());
+        topPanel.add(welcomeLabel, BorderLayout.WEST);
 
-        // Top: controls
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton logoutBtn = new JButton("Logout");
-        top.add(new JLabel("Logged in as: " + student.getUserName()));
-        top.add(Box.createHorizontalStrut(20));
-        top.add(logoutBtn);
-        root.add(top, BorderLayout.NORTH);
-
         logoutBtn.addActionListener(e -> {
-            dispose();
-            new LoginFrame().setVisible(true);
+            dispose(); // اغلاق الـ Dashboard الحالي
+            new LoginFrame(); // فتح Login Frame جديد
         });
+        topPanel.add(logoutBtn, BorderLayout.EAST);
 
-        // Center: two lists side by side
-        JPanel center = new JPanel(new GridLayout(1,2,10,10));
+        add(topPanel, BorderLayout.NORTH);
 
-        // left - available
-        JPanel left = new JPanel(new BorderLayout(6,6));
-        left.add(new JLabel("Available Courses"), BorderLayout.NORTH);
-        availableCourses = courseService.getAllCourses();
-        availableList = new JList<>(availableCourses.stream().map(Course::getTitle).toArray(String[]::new));
-        left.add(new JScrollPane(availableList), BorderLayout.CENTER);
+        // ================= Available Courses =================
+        JPanel availablePanel = new JPanel(new BorderLayout(10,10));
+        searchField = new JTextField();
+        searchField.setToolTipText("Search courses...");
+        availablePanel.add(searchField, BorderLayout.NORTH);
 
-        JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        JButton enrollBtn = new JButton("Enroll");
-        JButton detailsBtn = new JButton("View Details");
-        leftBtns.add(enrollBtn);
-        leftBtns.add(detailsBtn);
-        left.add(leftBtns, BorderLayout.SOUTH);
+        String[] columns = {"ID", "Title", "Instructor", "Action"};
+        availableModel = new DefaultTableModel(columns, 0) {
+            public boolean isCellEditable(int row, int column) { return column == 3; }
+        };
+        availableTable = new JTable(availableModel);
+        availableTable.getColumn("Action").setCellRenderer(new ButtonRenderer());
+        availableTable.getColumn("Action").setCellEditor(new ButtonEditor(new JCheckBox(), "Enroll", courseId -> {
+            if(courseId == -1) return; // حماية من Row فارغ
+            Course c = courseService.getCourseById(courseId);
+            if(c != null) student.enrollCourse(c);
+            refreshEnrolledCourses();
+            refreshAvailableCourses();
+            courseService.saveCourses();
+        }));
+        availablePanel.add(new JScrollPane(availableTable), BorderLayout.CENTER);
+        tabbedPane.add("Available Courses", availablePanel);
 
-        // right - enrolled
-        JPanel right = new JPanel(new BorderLayout(6,6));
-        right.add(new JLabel("Your Courses"), BorderLayout.NORTH);
-        enrolledCourses = courseService.getEnrolledCourses(student);
-        enrolledList = new JList<>(enrolledCourses.stream().map(Course::getTitle).toArray(String[]::new));
-        right.add(new JScrollPane(enrolledList), BorderLayout.CENTER);
+        // ================= Enrolled Courses =================
+        JPanel enrolledPanel = new JPanel(new BorderLayout(10,10));
+        String[] enrolledCols = {"ID", "Title", "Instructor", "Progress", "Action"};
+        enrolledModel = new DefaultTableModel(enrolledCols, 0) {
+            public boolean isCellEditable(int row, int column) { return column == 4; }
+        };
+        enrolledTable = new JTable(enrolledModel);
+        enrolledTable.getColumn("Action").setCellRenderer(new ButtonRenderer());
+        enrolledTable.getColumn("Action").setCellEditor(new ButtonEditor(new JCheckBox(), "View", courseId -> {
+            if(courseId == -1) return;
+            Course c = courseService.getCourseById(courseId);
+            if(c != null) new LessonListFrame(student, c, this);
+        }));
 
-        JPanel rightBtns = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        JButton openLessonsBtn = new JButton("Open Lessons");
-        JButton courseProgressBtn = new JButton("View Progress");
-        rightBtns.add(openLessonsBtn);
-        rightBtns.add(courseProgressBtn);
-        right.add(rightBtns, BorderLayout.SOUTH);
+        enrolledTable.getColumn("Progress").setCellRenderer(new ProgressRenderer());
+        enrolledPanel.add(new JScrollPane(enrolledTable), BorderLayout.CENTER);
+        tabbedPane.add("Enrolled Courses", enrolledPanel);
 
-        center.add(left);
-        center.add(right);
-        root.add(center, BorderLayout.CENTER);
+        add(tabbedPane, BorderLayout.CENTER);
+        setVisible(true);
 
-        // actions
-        enrollBtn.addActionListener(e -> doEnroll());
-        detailsBtn.addActionListener(e -> viewCourseDetailsFromAvailable());
-        openLessonsBtn.addActionListener(e -> openLessons());
-        courseProgressBtn.addActionListener(e -> showProgress());
-
-        // refresh window when regaining focus (simple)
-        addWindowFocusListener(new java.awt.event.WindowAdapter() {
-            public void windowGainedFocus(java.awt.event.WindowEvent e) {
-                refreshData();
+        // ================= Search =================
+        searchField.addKeyListener(new KeyAdapter() {
+            public void keyReleased(KeyEvent e) {
+                refreshAvailableCourses(searchField.getText());
             }
         });
+
+        refreshAvailableCourses();
+        refreshEnrolledCourses();
     }
 
-    private void refreshData() {
-        availableCourses = courseService.getAllCourses();
-        availableList.setListData(availableCourses.stream().map(Course::getTitle).toArray(String[]::new));
-        enrolledCourses = courseService.getEnrolledCourses(student);
-        enrolledList.setListData(enrolledCourses.stream().map(Course::getTitle).toArray(String[]::new));
+    public void refreshAvailableCourses() { refreshAvailableCourses(""); }
+
+    private void refreshAvailableCourses(String filter) {
+        availableModel.setRowCount(0);
+        List<Course> courses = courseService.getAvailableCourses(student);
+        if(courses == null) return;
+        for(Course c : courses){
+            if(filter.isEmpty() || c.getTitle().toLowerCase().contains(filter.toLowerCase())){
+                String instName = (c.getInstructor() != null) ? c.getInstructor().getUsername() : "Unknown";
+                availableModel.addRow(new Object[]{c.getCourseId(), c.getTitle(), instName, "Enroll"});
+            }
+        }
     }
 
-    private void doEnroll() {
-        int idx = availableList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Choose a course to enroll.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    public void refreshEnrolledCourses() {
+        enrolledModel.setRowCount(0);
+        List<Course> courses = student.getEnrolledCourses();
+        if(courses == null) return;
+        for(Course c : courses){
+            int progress = student.getProgress(c);
+            String instName = (c.getInstructor() != null) ? c.getInstructor().getUsername() : "Unknown";
+            enrolledModel.addRow(new Object[]{c.getCourseId(), c.getTitle(), instName, progress, "View"});
         }
-        Course c = availableCourses.get(idx);
-        boolean ok = courseService.enrollStudent(student, c);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Enrollment failed or already enrolled.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Enrolled in " + c.getTitle(), "Success", JOptionPane.INFORMATION_MESSAGE);
-        refreshData();
     }
 
-    private void openLessons() {
-        int idx = enrolledList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select your enrolled course.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    // ================= Renderers & Editors =================
+    class ButtonRenderer extends JButton implements TableCellRenderer {
+        public ButtonRenderer() { setOpaque(true); }
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            setText((value == null) ? "" : value.toString());
+            return this;
         }
-        Course c = enrolledCourses.get(idx);
-        new LessonListFrame(student, c).setVisible(true);
     }
 
-    private void viewCourseDetailsFromAvailable() {
-        int idx = availableList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select a course first.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    interface ButtonAction { void action(int courseId); }
+
+    class ButtonEditor extends DefaultCellEditor {
+        protected JButton button;
+        private int courseId;
+        private boolean clicked;
+        private ButtonAction action;
+
+        public ButtonEditor(JCheckBox checkBox, String btnText, ButtonAction action){
+            super(checkBox);
+            this.button = new JButton(btnText);
+            this.button.setOpaque(true);
+            this.action = action;
+            button.addActionListener(e -> fireEditingStopped());
         }
-        Course c = availableCourses.get(idx);
-        StringBuilder sb = new StringBuilder();
-        sb.append("Title: ").append(c.getTitle()).append("\n\n");
-        sb.append("Description: ").append(c.getDescription()).append("\n\n");
-        sb.append("Instructor: ").append(c.getInstructor().getUserName()).append("\n");
-        JOptionPane.showMessageDialog(this, sb.toString(), "Course Details", JOptionPane.INFORMATION_MESSAGE);
+
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column){
+            if(row >= 0 && row < table.getRowCount()){
+                Object idObj = table.getValueAt(row,0);
+                if(idObj instanceof Integer){
+                    courseId = (Integer) idObj;
+                } else {
+                    courseId = -1;
+                }
+            } else {
+                courseId = -1;
+            }
+            clicked = true;
+            return button;
+        }
+
+        public Object getCellEditorValue(){
+            if(clicked && courseId != -1) action.action(courseId);
+            clicked = false;
+            return "";
+        }
     }
 
-    private void showProgress() {
-        int idx = enrolledList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select your enrolled course.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    class ProgressRenderer extends JProgressBar implements TableCellRenderer {
+        public ProgressRenderer() { setStringPainted(true); }
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column){
+            int val = (value instanceof Integer) ? (Integer)value : 0;
+            setValue(val);
+            setString(val + "%");
+            return this;
         }
-        Course c = enrolledCourses.get(idx);
-        String progress = courseService.getProgressSummary(student, c);
-        JOptionPane.showMessageDialog(this, progress, "Progress", JOptionPane.INFORMATION_MESSAGE);
     }
 }

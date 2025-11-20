@@ -5,129 +5,123 @@ import com.example.models.Lesson;
 import com.example.services.CourseService;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.List;
 
 public class LessonManagementFrame extends JFrame {
+    private Course course;
+    private CourseService courseService;
+    private JTable lessonTable;
+    private DefaultTableModel lessonModel;
 
-    private final Course course;
-    private final CourseService courseService;
-    private JList<String> lessonList;
-    private List<Lesson> lessons;
-
-    public LessonManagementFrame(Course course) {
+    public LessonManagementFrame(Course course){
         this.course = course;
         this.courseService = CourseService.getInstance();
 
-        setTitle("Manage Lessons - " + course.getTitle());
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(700, 480);
+        setTitle("Manage Lessons: " + course.getTitle());
+        setSize(700,500);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        JPanel root = new JPanel(new BorderLayout(10,10));
-        root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-        add(root);
+        String[] columns = {"ID", "Title", "Action"};
+        lessonModel = new DefaultTableModel(columns,0){
+            public boolean isCellEditable(int row,int column){ return column==2; }
+        };
 
-        lessons = courseService.getLessons(course);
-        lessonList = new JList<>(lessons.stream().map(Lesson::getTitle).toArray(String[]::new));
-        root.add(new JScrollPane(lessonList), BorderLayout.CENTER);
+        lessonTable = new JTable(lessonModel);
+        lessonTable.getColumn("Action").setCellRenderer(new ButtonRenderer());
+        lessonTable.getColumn("Action").setCellEditor(new ButtonEditor(new JCheckBox(), (lessonId)->{
+            Lesson l = course.getLessons().stream().filter(les->les.getLessonId()==lessonId).findFirst().orElse(null);
+            if(l!=null) manageLessonDialog(l);
+        }));
 
-        JPanel controls = new JPanel();
-        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        refreshLessons();
+
+        add(new JScrollPane(lessonTable), BorderLayout.CENTER);
+
         JButton addBtn = new JButton("Add Lesson");
-        JButton editBtn = new JButton("Edit Lesson");
-        JButton delBtn = new JButton("Delete Lesson");
-        controls.add(addBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(editBtn);
-        controls.add(Box.createVerticalStrut(8));
-        controls.add(delBtn);
+        addBtn.addActionListener(e->addLessonDialog());
+        add(addBtn, BorderLayout.SOUTH);
 
-        root.add(controls, BorderLayout.EAST);
+        setVisible(true);
+    }
 
-        addBtn.addActionListener(e -> addLesson());
-        editBtn.addActionListener(e -> editLesson());
-        delBtn.addActionListener(e -> deleteLesson());
+    private void refreshLessons(){
+        lessonModel.setRowCount(0);
+        if(course.getLessons()==null) course.setLessons(new java.util.ArrayList<>());
+        for(Lesson l : course.getLessons()){
+            lessonModel.addRow(new Object[]{l.getLessonId(), l.getTitle(), "Edit/Delete"});
+        }
+    }
 
-        // refresh when focused
-        addWindowFocusListener(new java.awt.event.WindowAdapter() {
-            public void windowGainedFocus(java.awt.event.WindowEvent e) {
-                refresh();
+    private void addLessonDialog(){
+        JTextField titleField = new JTextField();
+        JTextArea contentArea = new JTextArea(5,20);
+
+        JPanel panel = new JPanel(new GridLayout(0,1,5,5));
+        panel.add(new JLabel("Lesson Title:")); panel.add(titleField);
+        panel.add(new JLabel("Lesson Content:")); panel.add(new JScrollPane(contentArea));
+
+        int res = JOptionPane.showConfirmDialog(this, panel, "Add Lesson", JOptionPane.OK_CANCEL_OPTION);
+        if(res==JOptionPane.OK_OPTION){
+            String title = titleField.getText();
+            String content = contentArea.getText();
+            if(!title.isEmpty() && !content.isEmpty()){
+                Lesson l = new Lesson(title, content);
+                course.getLessons().add(l);
+                courseService.saveCourses();
+                refreshLessons();
             }
-        });
+        }
     }
 
-    private void refresh() {
-        lessons = courseService.getLessons(course);
-        lessonList.setListData(lessons.stream().map(Lesson::getTitle).toArray(String[]::new));
+    private void manageLessonDialog(Lesson lesson){
+        JTextField titleField = new JTextField(lesson.getTitle());
+        JTextArea contentArea = new JTextArea(lesson.getContent(),5,20);
+
+        JPanel panel = new JPanel(new GridLayout(0,1,5,5));
+        panel.add(new JLabel("Lesson Title:")); panel.add(titleField);
+        panel.add(new JLabel("Lesson Content:")); panel.add(new JScrollPane(contentArea));
+
+        Object[] options = {"Save","Delete","Cancel"};
+        int res = JOptionPane.showOptionDialog(this,panel,"Edit Lesson",
+                JOptionPane.YES_NO_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE,null,options,options[0]);
+
+        if(res==JOptionPane.YES_OPTION){
+            lesson.setTitle(titleField.getText());
+            lesson.setContent(contentArea.getText());
+            courseService.saveCourses();
+            refreshLessons();
+        } else if(res==JOptionPane.NO_OPTION){
+            int confirm = JOptionPane.showConfirmDialog(this,"Confirm delete?","Confirm",JOptionPane.YES_NO_OPTION);
+            if(confirm==JOptionPane.YES_OPTION){
+                course.getLessons().remove(lesson);
+                courseService.saveCourses();
+                refreshLessons();
+            }
+        }
     }
 
-    private void addLesson() {
-        JTextField title = new JTextField();
-        JTextArea content = new JTextArea(8, 40);
-        JPanel p = new JPanel(new BorderLayout(6,6));
-        p.add(new JLabel("Title:"), BorderLayout.NORTH);
-        p.add(title, BorderLayout.CENTER);
-        p.add(new JLabel("Content:"), BorderLayout.SOUTH);
-
-        int res1 = JOptionPane.showConfirmDialog(this, new Object[]{ "Title:", title, "Content:", new JScrollPane(content) }, "Add Lesson", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (res1 != JOptionPane.OK_OPTION) return;
-        String t = title.getText().trim();
-        String c = content.getText().trim();
-        if (t.isEmpty() || c.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Both title and content required.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
+    class ButtonRenderer extends JButton implements javax.swing.table.TableCellRenderer{
+        public ButtonRenderer(){ setOpaque(true);}
+        public Component getTableCellRendererComponent(JTable table,Object value,boolean isSelected,boolean hasFocus,int row,int column){
+            setText((value==null)?"":value.toString()); return this;
         }
-        boolean ok = courseService.addLesson(course, t, c);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Add lesson failed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Lesson added.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        refresh();
     }
 
-    private void editLesson() {
-        int idx = lessonList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select lesson to edit.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    interface ButtonAction{ void action(int id);}
+    class ButtonEditor extends DefaultCellEditor{
+        protected JButton button; private boolean clicked; private int id; private ButtonAction action;
+        public ButtonEditor(JCheckBox checkBox, ButtonAction action){
+            super(checkBox); button = new JButton(); button.setOpaque(true); button.setText("Edit/Delete");
+            this.action = action; button.addActionListener(e->fireEditingStopped());
         }
-        Lesson lesson = lessons.get(idx);
-        JTextField title = new JTextField(lesson.getTitle());
-        JTextArea content = new JTextArea(lesson.getContent(), 8, 40);
-        int res = JOptionPane.showConfirmDialog(this, new Object[]{ "Title:", title, "Content:", new JScrollPane(content) }, "Edit Lesson", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (res != JOptionPane.OK_OPTION) return;
-        String t = title.getText().trim();
-        String c = content.getText().trim();
-        if (t.isEmpty() || c.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Both title and content required.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
+        public Component getTableCellEditorComponent(JTable table,Object value,boolean isSelected,int row,int column){
+            id = (int)table.getValueAt(row,0); clicked=true; return button;
         }
-        boolean ok = courseService.updateLesson(lesson, t, c);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Update failed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Lesson updated.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        refresh();
-    }
-
-    private void deleteLesson() {
-        int idx = lessonList.getSelectedIndex();
-        if (idx == -1) {
-            JOptionPane.showMessageDialog(this, "Select lesson to delete.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        Lesson lesson = lessons.get(idx);
-        int confirm = JOptionPane.showConfirmDialog(this, "Delete lesson '" + lesson.getTitle() + "'?", "Confirm", JOptionPane.YES_NO_OPTION);
-        if (confirm != JOptionPane.YES_OPTION) return;
-        boolean ok = courseService.deleteLesson(course, lesson);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Delete failed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Lesson deleted.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        refresh();
+        public Object getCellEditorValue(){ if(clicked) action.action(id); clicked=false; return ""; }
+        public boolean stopCellEditing(){ clicked=false; return super.stopCellEditing(); }
+        protected void fireEditingStopped(){ super.fireEditingStopped(); }
     }
 }
