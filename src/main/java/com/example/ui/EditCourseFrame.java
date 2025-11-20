@@ -1,60 +1,70 @@
 package com.example.ui;
 
 import com.example.models.Course;
+import com.example.models.Instructor;
 import com.example.services.CourseService;
+import com.example.database.JsonDatabaseManager;
 
 import javax.swing.*;
 import java.awt.*;
 
 public class EditCourseFrame extends JFrame {
-
-    private final Course course;
-    private final CourseService courseService;
-    private final JTextField titleField;
-    private final JTextArea descArea;
-
     public EditCourseFrame(Course course) {
-        this.course = course;
-        this.courseService = CourseService.getInstance();
+        if (course == null) {
+            JOptionPane.showMessageDialog(null, "Error: Course is null!");
+            dispose();
+            return;
+        }
 
-        setTitle("Edit Course - " + course.getTitle());
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(420, 360);
+        CourseService courseService = CourseService.getInstance();
+
+        setTitle("Edit Course: " + course.getTitle());
+        setSize(400, 300);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        JPanel root = new JPanel(new BorderLayout(8,8));
-        root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-        add(root);
+        JPanel panel = new JPanel(new GridLayout(0,1,5,5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
 
-        titleField = new JTextField(course.getTitle());
-        descArea = new JTextArea(course.getDescription(), 8, 40);
+        panel.add(new JLabel("Course Title:"));
+        JTextField titleField = new JTextField(course.getTitle());
+        panel.add(titleField);
 
-        JPanel form = new JPanel(new GridLayout(2,1,8,8));
-        form.add(new CreateCourseFrame.LabeledPanel("Title:", titleField));
-        form.add(new CreateCourseFrame.LabeledPanel("Description:", new JScrollPane(descArea)));
-        root.add(form, BorderLayout.CENTER);
+        panel.add(new JLabel("Description:"));
+        JTextArea descArea = new JTextArea(course.getDescription(), 5, 20);
+        panel.add(new JScrollPane(descArea));
 
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton saveBtn = new JButton("Save");
-        bottom.add(saveBtn);
-        root.add(bottom, BorderLayout.SOUTH);
+        panel.add(saveBtn);
 
-        saveBtn.addActionListener(e -> saveChanges());
-    }
+        saveBtn.addActionListener(e -> {
+            String title = titleField.getText().trim();
+            String desc = descArea.getText().trim();
 
-    private void saveChanges() {
-        String newTitle = titleField.getText().trim();
-        String newDesc = descArea.getText().trim();
-        if (newTitle.isEmpty() || newDesc.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Fill title and description.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        boolean ok = courseService.updateCourse(course, newTitle, newDesc);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Update failed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Course updated.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        dispose();
+            if(title.isEmpty() || desc.isEmpty()){
+                JOptionPane.showMessageDialog(this, "Title and Description are required!", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // ================= Update Course =================
+            course.setTitle(title);
+            course.setDescription(desc);
+
+            // ================= Ensure Instructor Link =================
+            Instructor inst = course.getInstructor();
+            if(inst != null && !inst.getCreatedCourses().contains(course)){
+                inst.getCreatedCourses().add(course);
+            }
+
+            // ================= Save Changes =================
+            courseService.saveCourses();
+            JsonDatabaseManager.getInstance().saveCourses();
+
+            JOptionPane.showMessageDialog(this, "Course updated successfully!");
+            dispose();
+        });
+
+        add(panel);
+        setVisible(true);
     }
 }

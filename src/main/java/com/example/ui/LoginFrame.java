@@ -7,100 +7,62 @@ import com.example.services.AuthService;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.regex.Pattern;
 
 public class LoginFrame extends JFrame {
-
-    private final AuthService authService;
-    private final JTextField emailField;
-    private final JPasswordField passwordField;
+    private JTextField emailField;
+    private JPasswordField passwordField;
+    private AuthService authService;
 
     public LoginFrame() {
         authService = AuthService.getInstance();
 
-        setTitle("SkillForge - Login");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(380, 240);
+        setTitle("Login");
+        setSize(400, 300);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        // Root panel
-        JPanel root = new JPanel(new BorderLayout(10, 10));
-        root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        add(root);
+        JPanel panel = new JPanel(new GridLayout(4, 2, 10, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-        // Form panel
-        JPanel form = new JPanel();
-        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
-
-        JPanel row1 = new JPanel(new BorderLayout(6, 6));
-        row1.add(new JLabel("Email:"), BorderLayout.WEST);
+        panel.add(new JLabel("Email:"));
         emailField = new JTextField();
-        row1.add(emailField, BorderLayout.CENTER);
-        form.add(row1);
-        form.add(Box.createVerticalStrut(8));
+        panel.add(emailField);
 
-        JPanel row2 = new JPanel(new BorderLayout(6, 6));
-        row2.add(new JLabel("Password:"), BorderLayout.WEST);
+        panel.add(new JLabel("Password:"));
         passwordField = new JPasswordField();
-        row2.add(passwordField, BorderLayout.CENTER);
-        form.add(row2);
-        form.add(Box.createVerticalStrut(12));
+        panel.add(passwordField);
 
-        root.add(form, BorderLayout.CENTER);
-
-        // Buttons
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
         JButton loginBtn = new JButton("Login");
-        JButton signupBtn = new JButton("Go to Signup");
-        buttons.add(loginBtn);
-        buttons.add(signupBtn);
-        root.add(buttons, BorderLayout.SOUTH);
+        panel.add(loginBtn);
+        JButton signupBtn = new JButton("Signup");
+        panel.add(signupBtn);
 
-        loginBtn.addActionListener(e -> doLogin());
-        signupBtn.addActionListener(e -> {
-            dispose();
-            new SignupFrame().setVisible(true);
-        });
-    }
+        add(panel);
 
-    private void doLogin() {
-        String email = emailField.getText().trim();
-        String pass = new String(passwordField.getPassword());
+        loginBtn.addActionListener(e -> {
+            String email = emailField.getText();
+            String password = new String(passwordField.getPassword());
+            User user = authService.login(email, password);
+            if (user != null) {
+                JOptionPane.showMessageDialog(this, "Login Successful!");
+                dispose();
 
-        if (email.isEmpty() || pass.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please fill email and password.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
+                if (user instanceof Instructor) {
+                    new InstructorDashboardFrame((Instructor) user);
+                } else if (user instanceof Student) {
+                    new StudentDashboardFrame((Student) user);
+                }
 
-        if (!isValidEmail(email)) {
-            JOptionPane.showMessageDialog(this, "Invalid email format.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        User user = authService.login(email, pass); // expects null on fail
-
-        if (user == null) {
-            JOptionPane.showMessageDialog(this, "Invalid email or password.", "Auth Failed", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        // open appropriate dashboard
-        SwingUtilities.invokeLater(() -> {
-            dispose();
-            if (user instanceof Student) {
-                new StudentDashboardFrame((Student) user).setVisible(true);
-            } else if (user instanceof Instructor) {
-                new InstructorDashboardFrame((Instructor) user).setVisible(true);
             } else {
-                // fallback
-                JOptionPane.showMessageDialog(null, "Unknown user role.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Invalid credentials!", "Error", JOptionPane.ERROR_MESSAGE);
             }
         });
-    }
 
-    private boolean isValidEmail(String email) {
-        // simple regex; backend should re-validate
-        String re = "^[\\w.-]+@[\\w.-]+\\.[A-Za-z]{2,}$";
-        return Pattern.compile(re).matcher(email).matches();
+        signupBtn.addActionListener(e -> {
+            dispose();
+            new SignupFrame();
+        });
+
+        setVisible(true);
     }
 }

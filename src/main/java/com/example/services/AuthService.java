@@ -1,91 +1,77 @@
 package com.example.services;
 
+import com.example.models.User;
 import com.example.models.Student;
 import com.example.models.Instructor;
-import com.example.models.User;
-import com.google.gson.*;
-import java.io.*;
-import java.lang.reflect.Type;
-import java.util.*;
+import com.example.database.JsonDatabaseManager;
+
+import java.security.MessageDigest;
+import java.util.List;
 
 public class AuthService {
-
     private static AuthService instance;
-    private final List<User> users;
-    private final Gson gson;
-
-    private final File usersFile = new File("users.json");
+    private JsonDatabaseManager db;
 
     private AuthService() {
-        users = new ArrayList<>();
-        gson = new GsonBuilder()
-                .setPrettyPrinting()
-                .registerTypeAdapter(User.class, new UserDeserializer())
-                .create();
-        loadUsers();
+        db = JsonDatabaseManager.getInstance();
     }
 
     public static AuthService getInstance() {
-        if (instance == null) {
-            instance = new AuthService();
-        }
+        if (instance == null) instance = new AuthService();
         return instance;
     }
 
+    // ================= Signup =================
     public boolean signup(String username, String email, String password, String role) {
-        if (users.stream().anyMatch(u -> u.getEmail().equalsIgnoreCase(email))) {
-            return false; // email exists
+        List<User> users = db.getUsers();
+        for(User u : users) {
+            if(u.getEmail().equalsIgnoreCase(email)) {
+                System.out.println("Signup failed: Email already exists!");
+                return false; // duplicate email
+            }
         }
 
-        User u;
-        if (role.equalsIgnoreCase("Student")) {
-            u = new Student(0, username, email, password);
+        String hashed = hashPassword(password);
+        User user;
+
+        // force role to lowercase
+        if(role.equalsIgnoreCase("instructor")){
+            user = new Instructor(username, email, hashed);
         } else {
-            u = new Instructor(0, username, email, password);
+            user = new Student(username, email, hashed);
         }
 
-        users.add(u);
-        saveUsers();
+        db.addUser(user); // سيتم حفظ المستخدم مباشرة في JSON
+        System.out.println("User added successfully: " + username + " (" + role.toLowerCase() + ")");
         return true;
     }
 
-    public User login(String email, String password) {
-        return users.stream()
-                .filter(u -> u.getEmail().equalsIgnoreCase(email) && u.getPassword().equals(password))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void loadUsers() {
-        if (!usersFile.exists()) return;
-
-        try (Reader reader = new FileReader(usersFile)) {
-            User[] arr = gson.fromJson(reader, User[].class);
-            if (arr != null) users.addAll(Arrays.asList(arr));
-        } catch (IOException e) {
-            System.out.println("Failed to load users: " + e.getMessage());
-        }
-    }
-
-    private void saveUsers() {
-        try (Writer writer = new FileWriter(usersFile)) {
-            gson.toJson(users, writer);
-        } catch (IOException e) {
-            System.out.println("Failed to save users: " + e.getMessage());
-        }
-    }
-
-    // Custom deserializer to handle User -> Student/Instructor
-    private static class UserDeserializer implements JsonDeserializer<User> {
-        @Override
-        public User deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-            JsonObject obj = json.getAsJsonObject();
-            String role = obj.has("role") ? obj.get("role").getAsString() : "Student"; // default Student
-            if (role.equalsIgnoreCase("Instructor")) {
-                return context.deserialize(json, Instructor.class);
-            } else {
-                return context.deserialize(json, Student.class);
+    // ================= Login =================
+    public User login(String email, String password){
+        String hashed = hashPassword(password);
+        for(User u : db.getUsers()){
+            if(u.getEmail().equalsIgnoreCase(email) && u.getPasswordHash().equals(hashed)) {
+                System.out.println("Login successful: " + email);
+                return u;
             }
+        }
+        System.out.println("Login failed: Invalid credentials for " + email);
+        return null;
+    }
+
+    // ================= SHA-256 Hashing =================
+    private String hashPassword(String password){
+        try{
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(password.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for(byte b : hash){
+                sb.append(String.format("%02x",b));
+            }
+            return sb.toString();
+        }catch(Exception e){
+            e.printStackTrace();
+            return null;
         }
     }
 }

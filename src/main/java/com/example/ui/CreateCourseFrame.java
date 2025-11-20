@@ -1,69 +1,51 @@
 package com.example.ui;
 
 import com.example.models.Instructor;
+import com.example.models.Course;
 import com.example.services.CourseService;
 
 import javax.swing.*;
 import java.awt.*;
 
 public class CreateCourseFrame extends JFrame {
-
-    private final Instructor instructor;
-    private final CourseService courseService;
-
-    private final JTextField titleField;
-    private final JTextArea descArea;
-
     public CreateCourseFrame(Instructor instructor) {
-        this.instructor = instructor;
-        this.courseService = CourseService.getInstance();
+        CourseService courseService = CourseService.getInstance();
 
-        setTitle("Create Course");
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(420, 360);
+        setTitle("Create New Course");
+        setSize(400, 300);
         setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        JPanel root = new JPanel(new BorderLayout(8,8));
-        root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-        add(root);
+        JPanel panel = new JPanel(new GridLayout(0,1,5,5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
 
-        JPanel form = new JPanel(new GridLayout(2,1,8,8));
-        titleField = new JTextField();
-        descArea = new JTextArea(8, 40);
-        form.add(new LabeledPanel("Title:", titleField));
-        form.add(new LabeledPanel("Description:", new JScrollPane(descArea)));
+        panel.add(new JLabel("Course Title:"));
+        JTextField titleField = new JTextField();
+        panel.add(titleField);
 
-        root.add(form, BorderLayout.CENTER);
+        panel.add(new JLabel("Description:"));
+        JTextArea descArea = new JTextArea(5,20);
+        panel.add(new JScrollPane(descArea));
 
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton createBtn = new JButton("Create");
-        bottom.add(createBtn);
-        root.add(bottom, BorderLayout.SOUTH);
+        panel.add(createBtn);
 
-        createBtn.addActionListener(e -> createCourse());
-    }
+        createBtn.addActionListener(e -> {
+            String title = titleField.getText();
+            String desc = descArea.getText();
+            if(!title.isEmpty() && !desc.isEmpty()){
+                Course course = new Course(title, desc, instructor);
+                courseService.addCourse(course);
+                instructor.getCreatedCourses().add(course);
+                courseService.saveCourses();
+                JOptionPane.showMessageDialog(this, "Course created successfully!");
+                dispose();
+            } else {
+                JOptionPane.showMessageDialog(this, "Title and Description required!", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
 
-    private void createCourse() {
-        String title = titleField.getText().trim();
-        String desc = descArea.getText().trim();
-        if (title.isEmpty() || desc.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Fill title and description.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        boolean ok = courseService.createCourse(instructor, title, desc);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, "Create course failed (duplicate or backend error).", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JOptionPane.showMessageDialog(this, "Course created.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        dispose();
-    }
-
-    static class LabeledPanel extends JPanel {
-        public LabeledPanel(String label, Component comp) {
-            setLayout(new BorderLayout(6,6));
-            add(new JLabel(label), BorderLayout.WEST);
-            add(comp, BorderLayout.CENTER);
-        }
+        add(panel);
+        setVisible(true);
     }
 }

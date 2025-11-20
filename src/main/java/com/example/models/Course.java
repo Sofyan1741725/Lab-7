@@ -2,51 +2,119 @@ package com.example.models;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.example.database.JsonDatabaseManager;
 
 public class Course {
-
-    private static int nextId = 1;
+    private static int courseCounter = 1;
 
     private int courseId;
     private String title;
     private String description;
     private Instructor instructor;
-    private ArrayList<Lesson> lessons;
+    private String instructorEmail;
+    private List<Lesson> lessons;
+    private List<Student> enrolledStudents;
 
+    // ======== مهم جداً لـ GSON ========
     public Course() {
-        this.courseId = nextId++;
+        this.courseId = courseCounter++;
         this.lessons = new ArrayList<>();
+        this.enrolledStudents = new ArrayList<>();
     }
 
-    public Course(String title, String description, Instructor instructor) {
-        this.courseId = nextId++;
-        this.title = title;
-        this.description = description;
+    public Course(String title, String description, Instructor instructor){
+        this.courseId = courseCounter++;
+        this.title = (title != null) ? title : "Untitled Course";
+        this.description = (description != null) ? description : "";
+        setInstructor(instructor);
+        this.lessons = new ArrayList<>();
+        this.enrolledStudents = new ArrayList<>();
+    }
+
+    // ======== Setters needed for JSON ========
+    public void setCourseId(int id){
+        this.courseId = id;
+        if(id >= courseCounter)
+            courseCounter = id + 1;   // ★ يمنع تكرار الـ IDs
+    }
+
+    public void setInstructorEmail(String email){
+        this.instructorEmail = email;
+    }
+
+    public void setTitle(String title){
+        this.title = (title != null) ? title : this.title;
+    }
+
+    public void setDescription(String description){
+        this.description = (description != null) ? description : this.description;
+    }
+
+    public void setLessons(List<Lesson> lessons){
+        this.lessons = (lessons != null) ? lessons : new ArrayList<>();
+    }
+
+    public void setEnrolledStudents(List<Student> students){
+        this.enrolledStudents = (students != null) ? students : new ArrayList<>();
+    }
+
+    // ======== Instructor Handling ========
+    public void setInstructor(Instructor instructor){
         this.instructor = instructor;
-        this.lessons = new ArrayList<>();
+        this.instructorEmail = (instructor != null) ? instructor.getEmail() : null;
     }
 
-    // ========= Getters & Setters =========
-    public int getCourseId() { return courseId; }
-    public String getTitle() { return title; }
-    public String getDescription() { return description; }
-    public Instructor getInstructor() { return instructor; }
-    public List<Lesson> getLessons() { return lessons; }
+    public Instructor getInstructor() {
+        if(this.instructor == null && instructorEmail != null){
+            this.instructor = (Instructor) JsonDatabaseManager.getInstance()
+                    .getUsers().stream()
+                    .filter(u -> u instanceof Instructor && u.getEmail().equals(instructorEmail))
+                    .findFirst()
+                    .orElse(null);
+        }
+        return this.instructor;
+    }
 
-    public void setCourseId(int courseId) { this.courseId = courseId; }
-    public void setTitle(String title) { this.title = title; }
-    public void setDescription(String description) { this.description = description; }
-    public void setInstructor(Instructor instructor) { this.instructor = instructor; }
-    public void setLessons(ArrayList<Lesson> lessons) { this.lessons = lessons; }
-
-    // إضافة درس جديد
-    public void addLesson(Lesson lesson) {
-        if (!lessons.contains(lesson)) {
+    // ======== Lesson Handling ========
+    public void addLesson(Lesson lesson){
+        if(lesson != null){
+            if(lessons == null) lessons = new ArrayList<>();
             lessons.add(lesson);
-            lesson.setCourse(this); // link lesson to this course
-            System.out.println("Lesson added successfully: " + lesson.getTitle());
-        } else {
-            System.out.println("Lesson already exists: " + lesson.getTitle());
         }
     }
+
+    public void removeLesson(Lesson lesson){
+        if(lesson != null && lessons != null){
+            lessons.remove(lesson);
+        }
+    }
+
+    public List<Lesson> getLessons(){
+        if(lessons == null) lessons = new ArrayList<>();
+        return lessons;
+    }
+
+    // ======== Enrolled Students ========
+    public List<Student> getEnrolledStudents(){
+        if(enrolledStudents == null) enrolledStudents = new ArrayList<>();
+        return enrolledStudents;
+    }
+
+    public void enrollStudent(Student student){
+        if(student != null){
+            if(enrolledStudents == null) enrolledStudents = new ArrayList<>();
+            if(!enrolledStudents.contains(student)){
+                enrolledStudents.add(student);
+            }
+        }
+    }
+
+    // ======== Getters ========
+    public int getCourseId(){ return courseId; }
+    public String getTitle(){ return title; }
+    public String getDescription(){ return description; }
+    public String getInstructorEmail(){ return instructorEmail; }
+
+    // ======== Counter Handling ========
+    public static void setCourseCounter(int value){ courseCounter = value; }
 }
