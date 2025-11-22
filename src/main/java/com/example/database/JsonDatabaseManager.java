@@ -1,219 +1,240 @@
 package com.example.database;
 
-import com.example.models.*;
-import com.example.utils.RuntimeTypeAdapterFactory;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
+import java.nio.file.*;
+import java.util.*;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
-public class JsonDatabaseManager {
+public class JsonDatabaseManager<T> {
 
-    private static JsonDatabaseManager instance;
-
-    private final String usersFilePath = "src/main/resources/users.json";
-    private final String coursesFilePath = "src/main/resources/courses.json";
-
-    private List<User> users;
-    private List<Course> courses;
-
+    private final Path path;
+    private final Class<T> type;
+    private final String idFieldName;
     private final Gson gson;
+    private final Function<JsonObject, T> customDeserializer;
 
-    private JsonDatabaseManager() {
-
-        // Register polymorphism for User → Student / Instructor
-        RuntimeTypeAdapterFactory<User> userAdapterFactory = RuntimeTypeAdapterFactory
-                .of(User.class, "role")
-                .registerSubtype(Student.class, "student")
-                .registerSubtype(Instructor.class, "instructor");
-
-        gson = new GsonBuilder()
-                .registerTypeAdapterFactory(userAdapterFactory)
-                .setPrettyPrinting()
-                .create();
-
-        ensureFilesExist();
-
-        users = loadUsers();
-        courses = loadCourses();
-
-        // Fix references inside objects (instructor, lessons, students…)
-        fixCourseRelationships();
-
-        // Fix counters for Course + Lesson
-        fixCounters();
+    public JsonDatabaseManager(String filepath, Class<T> type, String idFieldName) {
+        this(filepath, type, idFieldName, new GsonBuilder().setPrettyPrinting().create(), null);
     }
 
-    public static JsonDatabaseManager getInstance() {
-        if (instance == null) instance = new JsonDatabaseManager();
-        return instance;
+    public JsonDatabaseManager(String filepath, Class<T> type, String idFieldName, Gson gson, Function<JsonObject, T> customDeserializer) {
+        this.path = Paths.get(filepath);
+        this.type = type;
+        this.idFieldName = idFieldName;
+        this.gson = gson != null ? gson : new GsonBuilder().setPrettyPrinting().create();
+        this.customDeserializer = customDeserializer;
+        ensureFileExists();
     }
 
-    // =====================================================
-    //                 FILE INITIALIZATION
-    // =====================================================
-
-    private void ensureFilesExist() {
+    private synchronized void ensureFileExists() {
         try {
-            File dir = new File("src/main/resources");
-            if (!dir.exists()) dir.mkdirs();
-
-            File usersFile = new File(usersFilePath);
-            File coursesFile = new File(coursesFilePath);
-
-            if (!usersFile.exists() || usersFile.length() == 0)
-                try (FileWriter fw = new FileWriter(usersFile)) { fw.write("[]"); }
-
-            if (!coursesFile.exists() || coursesFile.length() == 0)
-                try (FileWriter fw = new FileWriter(coursesFile)) { fw.write("[]"); }
-
-        } catch (Exception e) {
-            e.printStackTrace();
+            if (Files.notExists(path)) {
+                if (path.getParent() != null) Files.createDirectories(path.getParent());
+                Files.write(path, "[]".getBytes(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to create JSON file: " + path.toString(), e);
         }
     }
 
-    // =====================================================
-    //                    LOADING DATA
-    // =====================================================
-
-    private List<User> loadUsers() {
-        try (Reader reader = new FileReader(usersFilePath)) {
-            List<User> list = gson.fromJson(reader, new TypeToken<List<User>>(){}.getType());
-            return list != null ? list : new ArrayList<>();
-        } catch (Exception e) {
-            System.err.println("Error loading users.json → empty list");
-            return new ArrayList<>();
+    private synchronized JsonArray readJsonArrayFromFile() {
+        ensureFileExists();
+        try (Reader r = Files.newBufferedReader(path)) {
+            JsonElement elem = JsonParser.parseReader(r);
+            if (elem == null || elem.isJsonNull()) return new JsonArray();
+            if (elem.isJsonArray()) return elem.getAsJsonArray();
+            JsonArray arr = new JsonArray();
+            arr.add(elem);
+            return arr;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read JSON file: " + path.toString(), e);
+        } catch (JsonParseException e) {
+            try {
+                Path backup = Paths.get(path.toString() + ".corrupt." + System.currentTimeMillis());
+                Files.copy(path, backup, StandardCopyOption.REPLACE_EXISTING);
+                Files.write(path, "[]".getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+            } catch (IOException ignored) { }
+            return new JsonArray();
         }
     }
 
-    private List<Course> loadCourses() {
-        try (Reader reader = new FileReader(coursesFilePath)) {
-            List<Course> list = gson.fromJson(reader, new TypeToken<List<Course>>(){}.getType());
-            return list != null ? list : new ArrayList<>();
-        } catch (Exception e) {
-            System.err.println("Error loading courses.json → empty list");
-            return new ArrayList<>();
+    private synchronized void writeJsonArrayToFile(JsonArray array) {
+        ensureFileExists();
+        try (Writer w = Files.newBufferedWriter(path, StandardOpenOption.TRUNCATE_EXISTING)) {
+            gson.toJson(array, w);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write JSON file: " + path.toString(), e);
         }
     }
 
-    // =====================================================
-    //                 FIX RELATIONSHIPS
-    // =====================================================
-
-    private void fixCourseRelationships() {
-
-        for (Course c : courses) {
-
-            // =========== FIX INSTRUCTOR ===========
-            if (c.getInstructorEmail() != null) {
-                Instructor inst = (Instructor) users.stream()
-                        .filter(u -> u instanceof Instructor && u.getEmail().equals(c.getInstructorEmail()))
-                        .findFirst().orElse(null);
-
-                c.setInstructor(inst);
-
-                if (inst != null) {
-                    if (inst.getCreatedCourses() == null)
-                        inst.setCreatedCourses(new ArrayList<>());
-
-                    if (!inst.getCreatedCourses().contains(c))
-                        inst.getCreatedCourses().add(c);
+    private synchronized List<T> loadAllObjects() {
+        JsonArray arr = readJsonArrayFromFile();
+        List<T> result = new ArrayList<>(arr.size());
+        if (customDeserializer != null) {
+            for (JsonElement e : arr) {
+                if (e != null && e.isJsonObject()) {
+                    T obj = customDeserializer.apply(e.getAsJsonObject());
+                    if (obj != null) result.add(obj);
                 }
             }
-
-            // ============ FIX LESSONS ============
-            if (c.getLessons() == null)
-                c.setLessons(new ArrayList<>());
-
-            // ============ FIX STUDENTS ============
-            if (c.getEnrolledStudents() == null)
-                c.setEnrolledStudents(new ArrayList<>());
-        }
-
-        // ============ FIX STUDENT COURSE LIST ============
-
-        for (User u : users) {
-            if (u instanceof Student s) {
-
-                if (s.getEnrolledCourseIds() == null)
-                    continue;
-
-                List<Course> enrolledList = new ArrayList<>();
-
-                for (Integer id : s.getEnrolledCourseIds()) {
-                    Course found = courses.stream()
-                            .filter(cr -> cr.getCourseId() == id)
-                            .findFirst().orElse(null);
-
-                    if (found != null)
-                        enrolledList.add(found);
-                }
+        } else {
+            Type listType = TypeToken.getParameterized(List.class, type).getType();
+            try (Reader r = Files.newBufferedReader(path)) {
+                List<T> list = gson.fromJson(r, listType);
+                if (list != null) return list;
+            } catch (IOException ignored) { }
+            for (JsonElement e : arr) {
+                try {
+                    T obj = gson.fromJson(e, type);
+                    if (obj != null) result.add(obj);
+                } catch (JsonSyntaxException ex) { }
             }
         }
+        return result;
     }
 
-    // =====================================================
-    //                   FIX COUNTERS
-    // =====================================================
+    private synchronized void saveAllObjects(List<T> list) {
+        JsonArray arr = new JsonArray();
+        for (T obj : list) {
+            JsonElement je = gson.toJsonTree(obj);
+            arr.add(je);
+        }
+        writeJsonArrayToFile(arr);
+    }
 
-    private void fixCounters() {
+    private String getIdFromObject(T obj) {
+        if (obj == null) return null;
+        String[] getters = new String[]{"get" + capitalize(idFieldName), "getId", "get" + capitalize(removeSuffix(idFieldName, "Id"))};
+        for (String getter : getters) {
+            try {
+                Method m = obj.getClass().getMethod(getter);
+                Object val = m.invoke(obj);
+                if (val != null) return val.toString();
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception ignored) { }
+        }
+        Class<?> c = obj.getClass();
+        while (c != null) {
+            try {
+                Field f = c.getDeclaredField(idFieldName);
+                f.setAccessible(true);
+                Object val = f.get(obj);
+                if (val != null) return val.toString();
+                break;
+            } catch (NoSuchFieldException ignored) {
+                c = c.getSuperclass();
+            } catch (Exception ignored) { break; }
+        }
+        return null;
+    }
 
-        int maxCourseId = 0;
-        int maxLessonId = 0;
+    private String getIdFromJson(JsonObject json) {
+        if (json == null) return null;
+        JsonElement e = json.get(idFieldName);
+        if (e != null && !e.isJsonNull()) return e.getAsString();
+        JsonElement e2 = json.get("id");
+        if (e2 != null && !e2.isJsonNull()) return e2.getAsString();
+        return null;
+    }
 
-        for (Course c : courses) {
+    private static String removeSuffix(String s, String suffix) {
+        if (s == null) return null;
+        return s.endsWith(suffix) ? s.substring(0, s.length() - suffix.length()) : s;
+    }
 
-            if (c.getCourseId() > maxCourseId)
-                maxCourseId = c.getCourseId();
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
 
-            if (c.getLessons() != null) {
-                for (Lesson l : c.getLessons()) {
-                    if (l.getLessonId() > maxLessonId)
-                        maxLessonId = l.getLessonId();
+    public synchronized void add(T obj) {
+        if (obj == null) throw new IllegalArgumentException("Object cannot be null");
+        List<T> list = loadAllObjects();
+        String id = getIdFromObject(obj);
+        if (id != null && idExistsInList(list, id)) throw new IllegalArgumentException("An object with the same id already exists: " + id);
+        list.add(obj);
+        saveAllObjects(list);
+    }
+
+    public synchronized List<T> getAll() { return Collections.unmodifiableList(loadAllObjects()); }
+
+    public synchronized Optional<T> getById(String id) {
+        if (id == null) return Optional.empty();
+        if (customDeserializer != null) {
+            JsonArray arr = readJsonArrayFromFile();
+            for (JsonElement e : arr) {
+                if (e.isJsonObject()) {
+                    String eid = getIdFromJson(e.getAsJsonObject());
+                    if (id.equals(eid)) return Optional.ofNullable(customDeserializer.apply(e.getAsJsonObject()));
                 }
             }
+            return Optional.empty();
+        } else {
+            List<T> list = loadAllObjects();
+            for (T t : list) {
+                String tid = getIdFromObject(t);
+                if (id.equals(tid)) return Optional.of(t);
+            }
+            return Optional.empty();
         }
-
-        Course.setCourseCounter(maxCourseId + 1);
-        Lesson.setLessonCounter(maxLessonId + 1);
     }
 
-    // =====================================================
-    //                       SAVE & ADD
-    // =====================================================
-
-    public void saveUsers() {
-        try (Writer writer = new FileWriter(usersFilePath)) {
-            gson.toJson(users, writer);
-        } catch (Exception e) { e.printStackTrace(); }
+    public synchronized boolean updateById(String id, T newObj) {
+        if (id == null) return false;
+        List<T> list = loadAllObjects();
+        for (int i = 0; i < list.size(); i++) {
+            String tid = getIdFromObject(list.get(i));
+            if (id.equals(tid)) {
+                list.set(i, newObj);
+                saveAllObjects(list);
+                return true;
+            }
+        }
+        return false;
     }
 
-    public void saveCourses() {
-        try (Writer writer = new FileWriter(coursesFilePath)) {
-            gson.toJson(courses, writer);
-        } catch (Exception e) { e.printStackTrace(); }
+    public synchronized boolean deleteById(String id) {
+        if (id == null) return false;
+        List<T> list = loadAllObjects();
+        Iterator<T> it = list.iterator();
+        boolean removed = false;
+        while (it.hasNext()) {
+            T t = it.next();
+            String tid = getIdFromObject(t);
+            if (id.equals(tid)) { it.remove(); removed = true; break; }
+        }
+        if (removed) saveAllObjects(list);
+        return removed;
     }
 
-    public void addUser(User user) {
-        if (user == null) return;
-
-        users.add(user);
-        saveUsers();
+    public synchronized boolean exists(Predicate<T> predicate) {
+        if (predicate == null) return false;
+        List<T> list = loadAllObjects();
+        for (T t : list) if (predicate.test(t)) return true;
+        return false;
     }
 
-    public void addCourse(Course course) {
-        if (course == null) return;
-
-        courses.add(course);
-        saveCourses();
+    public String generateUniqueId(String prefix) {
+        if (prefix == null) prefix = "";
+        return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
     }
 
-    // =====================================================
-    //                  GETTERS
-    // =====================================================
+    private boolean idExistsInList(List<T> list, String id) {
+        for (T t : list) if (id.equals(getIdFromObject(t))) return true;
+        return false;
+    }
 
-    public List<User> getUsers() { return users; }
-    public List<Course> getCourses() { return courses; }
+    public Path getPath() { return path; }
+
+    public static Object getInstance() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getInstance'");
+    }
 }
